@@ -16,11 +16,40 @@ import os
 from pathlib import Path
 from stat import ST_ATIME, ST_MTIME, ST_MODE, S_IMODE
 import string
+import subprocess
 try:
     import distutils_pytest
     cmdclass = distutils_pytest.cmdclass
 except (ImportError, AttributeError):
     cmdclass = dict()
+
+def get_version_from_git():
+    """Get version from git tags as a fallback."""
+    try:
+        # Determine the directory to run git from
+        try:
+            cwd = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            # __file__ not defined when exec'd directly
+            cwd = os.getcwd()
+        
+        # Try to get version from git describe
+        result = subprocess.run(
+            ['git', 'describe', '--tags', '--always'],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=cwd
+        )
+        git_version = result.stdout.strip()
+        # Clean up the version string to be PEP 440 compliant
+        # Replace any non-standard characters
+        if git_version:
+            return git_version.replace('-', '+', 1).replace('-', '.')
+        return None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
 try:
     import gitprops
     release = str(gitprops.get_last_release())
@@ -29,8 +58,15 @@ except (ImportError, LookupError):
     try:
         from _meta import release, version
     except ImportError:
-        log.warn("warning: cannot determine version number")
-        release = version = "UNKNOWN"
+        # Try to get version from git as a last resort
+        git_version = get_version_from_git()
+        if git_version:
+            log.info("using version from git: %s", git_version)
+            release = version = git_version
+        else:
+            log.warn("warning: cannot determine version number")
+            # Use a valid placeholder version instead of UNKNOWN
+            release = version = "0.0.0.dev0"
 
 docstring = __doc__
 
